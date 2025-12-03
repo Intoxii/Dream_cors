@@ -1,6 +1,15 @@
 # dream_cors
 
-A CORS (Cross-Origin Resource Sharing) middleware for the [Dream](https://github.com/dream-framework/dream) web framework in Gleam.
+A secure, spec-compliant CORS (Cross-Origin Resource Sharing) middleware for the [Dream](https://github.com/dream-framework/dream) web framework in Gleam.
+
+## Features
+
+- ✅ **Secure origin validation** - Matches request origin against allowed list
+- ✅ **Proper preflight handling** - Responds to OPTIONS requests correctly
+- ✅ **Wildcard support** - Handles `*` with proper credential restrictions
+- ✅ **Credential-aware** - Prevents wildcard + credentials security issues
+- ✅ **Configurable** - Full control over origins, methods, headers, and more
+- ✅ **Spec-compliant** - Follows CORS specification correctly
 
 ## Installation
 
@@ -80,7 +89,7 @@ pub fn setup_api_routes(cors) {
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `allow_origins` | `List(String)` | List of allowed origin domains (e.g., `["http://localhost:3000"]`) |
+| `allow_origins` | `List(String)` | List of allowed origin domains (e.g., `["http://localhost:3000"]`) or `["*"]` for all |
 | `allow_methods` | `List(String)` | HTTP methods to allow (e.g., `["GET", "POST", "PUT", "DELETE", "OPTIONS"]`) |
 | `allow_headers` | `List(String)` | Request headers that can be used (e.g., `["Content-Type", "Authorization"]`) |
 | `expose_headers` | `List(String)` | Response headers that browsers can access (e.g., `["X-Total-Count"]`) |
@@ -89,14 +98,31 @@ pub fn setup_api_routes(cors) {
 
 ## How It Works
 
-The middleware handles CORS in two ways:
+The middleware intelligently handles CORS in two ways:
 
-1. **Preflight Requests (OPTIONS)**: When the browser sends an OPTIONS request, the middleware responds immediately with appropriate CORS headers and a 200 status.
+### 1. Preflight Requests (OPTIONS)
 
-2. **Actual Requests**: For all other HTTP methods (GET, POST, etc.), the middleware:
-   - Passes the request to your controller
-   - Adds the `Access-Control-Allow-Origin` header to the response
-   - Returns the modified response
+When the browser sends an OPTIONS request:
+- Validates the request's `Origin` header against allowed origins
+- Returns `204 No Content` with appropriate CORS headers
+- Only sets `Access-Control-Allow-Origin` if origin is allowed
+
+### 2. Actual Requests (GET, POST, etc.)
+
+For all other HTTP methods:
+- Passes the request to your controller
+- Validates the origin
+- Adds CORS headers to the response (only if origin is allowed)
+- Returns the modified response
+
+### Origin Matching Logic
+
+The middleware implements secure origin matching:
+
+1. **Specific origin match**: If the request origin is in your allowed list, that specific origin is returned
+2. **Wildcard without credentials**: If `"*"` is in allowed origins and credentials are disabled, returns `"*"`
+3. **Wildcard with credentials**: If `"*"` is in allowed origins but credentials are enabled, returns the specific request origin (prevents security issue)
+4. **No match**: If origin is not allowed, CORS headers are not added
 
 ## Common Configurations
 
@@ -134,21 +160,62 @@ let cors = dream_cors.cors(
   allow_methods: ["GET", "OPTIONS"],
   allow_headers: ["Content-Type"],
   expose_headers: [],
-  allow_credentials: False,
+  allow_credentials: False,  // Must be False with wildcard
   max_age: 3600,
 )
 ```
 
+## Security Considerations
+
+### Wildcard (`*`) and Credentials
+
+**Important**: The CORS specification does not allow `Access-Control-Allow-Origin: *` when credentials are enabled. This middleware handles this automatically:
+
+- If you configure `allow_origins: ["*"]` with `allow_credentials: True`, the middleware will return the specific request origin instead of `*`
+- For maximum security with credentials, explicitly list allowed origins instead of using `*`
+
+### Origin Validation
+
+The middleware validates every request's `Origin` header against your configured list:
+- Only matching origins receive CORS headers
+- Non-matching origins are denied (no CORS headers added)
+- This prevents unauthorized domains from accessing your API
+
 ## CORS Headers
 
-The middleware sets the following headers:
+The middleware sets the following headers based on your configuration:
 
-- `Access-Control-Allow-Origin`: Allowed origins (comma-separated)
-- `Access-Control-Allow-Methods`: Allowed HTTP methods (comma-separated)
-- `Access-Control-Allow-Headers`: Allowed request headers (comma-separated)
-- `Access-Control-Expose-Headers`: Headers accessible to the browser (comma-separated)
-- `Access-Control-Allow-Credentials`: Whether credentials are allowed (`True` or `False`)
-- `Access-Control-Max-Age`: Preflight cache duration in seconds
+**For Preflight (OPTIONS) Requests:**
+- `Access-Control-Allow-Origin`: The matching origin or `*`
+- `Access-Control-Allow-Methods`: Allowed HTTP methods
+- `Access-Control-Allow-Headers`: Allowed request headers
+- `Access-Control-Allow-Credentials`: `true` (if configured)
+- `Access-Control-Max-Age`: Cache duration for preflight
+
+**For Actual Requests:**
+- `Access-Control-Allow-Origin`: The matching origin or `*`
+- `Access-Control-Allow-Credentials`: `true` (if configured)
+- `Access-Control-Expose-Headers`: Headers accessible to browser
+
+## Troubleshooting
+
+### CORS headers not appearing
+
+- Check that the request's `Origin` header matches one of your `allow_origins`
+- Verify the origin includes the protocol (e.g., `http://` or `https://`)
+- Check browser console for CORS errors
+
+### Credentials not working
+
+- Ensure `allow_credentials: True` is set
+- Don't use `"*"` in `allow_origins` with credentials
+- Make sure your frontend sends credentials (e.g., `credentials: 'include'` in fetch)
+
+### Preflight requests failing
+
+- Ensure `"OPTIONS"` is included in `allow_methods`
+- Check that all custom headers are listed in `allow_headers`
+- Verify the origin is in your `allow_origins` list
 
 ## License
 
@@ -160,7 +227,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Links
 
+- [Repository](https://github.com/Intoxii/Dream_cors)
 - [Dream Framework](https://github.com/dream-framework/dream)
 - [Gleam Language](https://gleam.run)
-- [CORS Documentation](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS)
-
+- [MDN CORS Documentation](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS)
